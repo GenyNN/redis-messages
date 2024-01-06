@@ -6,7 +6,6 @@ const {
 
 module.exports = function(sequelize, DataTypes) {
     var Message = sequelize.define('Message', {
-        //id: DataTypes.INTEGER,
         eventId: DataTypes.INTEGER,
         parentId: DataTypes.INTEGER,
         chatThreadId: DataTypes.INTEGER,

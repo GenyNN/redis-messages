@@ -39,12 +39,12 @@ class ChatController {
 
     static messages = async (req, res) => {
         let { id } = req.params;
-        let {limit, onlyOwn, userId, chatUserId} = req.body;
+        let {limit, onlyOwn, userId} = req.body;
         let currentUser = req.session.user ? req.session.user : null;
         if (!currentUser)
             return;
 
-        let searchCriteria = ChatController.prepareSearchCriteria(id, limit, onlyOwn, userId, chatUserId, currentUser);
+        let searchCriteria = ChatController.prepareSearchCriteria(id, limit, onlyOwn, userId, currentUser);
 
         if (currentUser.typeId == RolesEnum.API) {
             Message.findAll(searchCriteria).then( (messages) => ChatController.handleSQLReadMessages(messages, currentUser) ).then( (respMessages) => {
@@ -128,7 +128,6 @@ class ChatController {
         let redisUpdate = false;
         respMessages.documents.forEach(mes => {
             if ( (mes.value.userId != currentUser.id) ) {
-                //mes.value.read = 1; /*&& id != 1*/
                 if (!mes.value.read) {
                     importMulti.hSet(mes.id, {
                         "read": 1,
@@ -157,8 +156,6 @@ class ChatController {
             importMulti.exec(function(err,results){
                 if (err) { throw err; } else {
                   //this will log the results of the all hmsets:
-                  //[ ‘OK’, ‘OK’, ‘OK’, ‘OK’, ‘OK’ ]
-                  //Not very useful… yet!
                   console.log(results);
                   client.quit();
                  }
@@ -167,7 +164,7 @@ class ChatController {
         return filteredMessages; 
     }
     
-    static prepareSearchCriteria = (id, limit, onlyOwn, userId, chatUserId, currentUser) => {
+    static prepareSearchCriteria = (id, limit, onlyOwn, userId, currentUser) => {
         
         if (limit == null || limit == undefined)
             limit = 25;
@@ -190,9 +187,6 @@ class ChatController {
         }
         else if (userId !== null && userId !== undefined) {
             whereCriteria['userId'] = userId;
-        }
-        else if (chatUserId !== null && chatUserId !== undefined) {
-            whereCriteria['chatUserId'] = chatUserId;
         }
         if (currentUser.typeId != RolesEnum.API && currentUser.typeId != RolesEnum.ADMIN) {
             whereCriteria['deleted'] = false;
