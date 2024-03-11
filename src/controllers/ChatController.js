@@ -99,19 +99,9 @@ class ChatController {
         let whereCriteria = searchCriteria.where;
         let redisArrParams = [];
         let redisStrParams = "";
-        redisArrParams = Object.entries(whereCriteria).map(([key, value]) => {
-            let resParam = null;
-            if (typeof value == "boolean") {
-                let bval = value == true ? 1 : 0;
-                resParam = `@${key}: [${bval} ${bval}]`;
-            }
-            else {
-                resParam = `@${key}: [${value} ${value}]`;
-            }
-    
-            return resParam;
-        });
+        redisArrParams = ChatController.prepareRedisSearchParams(whereCriteria);
 
+        
         redisStrParams = redisArrParams.join(" ");
         let respMessages = await redisClient.ft.search('idx:messages', redisStrParams, {
                 LIMIT: {
@@ -124,19 +114,32 @@ class ChatController {
                 }    
         });
 
-        var importMulti = redisClient.multi();
-        let redisUpdate = false;
+        let importMulti = redisClient.multi();
+
+        let shouldRedisUpdate = ChatController.isShouldUpdateMessagesInTransaction(respMessages, importMulti, currentUser);
+
+        let filteredMessages = ChatController.filterAndMapMessages(respMessages);
+
+        ChatController.execTransactionMessagesUpdate(shouldRedisUpdate, importMulti);
+        return filteredMessages; 
+    }
+    
+    static isShouldUpdateMessagesInTransaction = (respMessages, importMulti, currentUser) => {
+        let isUpdate = false;
         respMessages.documents.forEach(mes => {
-            if ( (mes.value.userId != currentUser.id) ) {
+            if ( parseInt(mes.value.userId) != currentUser.id )  {
                 if (!mes.value.read) {
                     importMulti.hSet(mes.id, {
                         "read": 1,
                     });
-                    redisUpdate = true;
+                    isUpdate = true;
                 }
             }
         });
+        return isUpdate;
+    }
 
+    static filterAndMapMessages = (respMessages) => {
         let filteredMessages = respMessages.documents.map((o) => { 
             let jsonObj = null;
             try {
@@ -151,17 +154,38 @@ class ChatController {
             o.value.read = o.value.read > 0 ? true : false;
             return o.value;
         });
+        return filteredMessages;
+    }
 
+     static execTransactionMessagesUpdate = (redisUpdate, importMulti) => {
         if (redisUpdate) {
             importMulti.exec(function(err,results){
                 if (err) { throw err; } else {
                   //this will log the results of the all hmsets:
+                  //[ ‘OK’, ‘OK’, ‘OK’, ‘OK’, ‘OK’ ]
+                  //Not very useful… yet!
                   console.log(results);
                   client.quit();
                  }
             });
         }
-        return filteredMessages; 
+    }
+
+    static prepareRedisSearchParams = (whereCriteria) => {
+        let  redisSearchParams = "";
+        redisSearchParams = Object.entries(whereCriteria).map(([key, value]) => {
+            let resParam = null;
+            if (typeof value == "boolean") {
+                let bval = value == true ? 1 : 0;
+                resParam = `@${key}: [${bval} ${bval}]`;
+            }
+            else {
+                resParam = `@${key}: [${value} ${value}]`;
+            }
+    
+            return resParam;
+        });
+        return redisSearchParams;
     }
     
     static prepareSearchCriteria = (id, limit, onlyOwn, userId, currentUser) => {
